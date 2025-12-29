@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import requests
+import time # Added import
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 
@@ -25,20 +26,26 @@ def create_dataframe(price_data):
     return df
 
 def load_to_bigquery(df, project_id, dataset_id, table_id):
-    """Loads a DataFrame into a BigQuery table."""
+    """
+    Loads a DataFrame into a BigQuery table.
+    Checks for dataset and table existence and creates them if they don't exist.
+    """
     if df is None:
         print("DataFrame is empty, skipping BigQuery load.")
         return
 
     client = bigquery.Client(project=project_id)
     dataset_ref = client.dataset(dataset_id)
-    table_ref = dataset_ref.table(table_id)
 
+    # Check for dataset existence
     try:
         client.get_dataset(dataset_ref)
+        print(f"Dataset {dataset_id} already exists.")
     except NotFound:
         print(f"Dataset {dataset_id} not found, creating it.")
         client.create_dataset(dataset_ref, exists_ok=True)
+
+    table_ref = dataset_ref.table(table_id)
 
     # Define table schema
     schema = [
@@ -47,6 +54,15 @@ def load_to_bigquery(df, project_id, dataset_id, table_id):
         bigquery.SchemaField("gbp", "FLOAT64", mode="REQUIRED"),
         bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
     ]
+
+    # Check for table existence
+    try:
+        client.get_table(table_ref)
+        print(f"Table {table_id} already exists.")
+    except NotFound:
+        print(f"Table {table_id} not found, creating it.")
+        table = bigquery.Table(table_ref, schema=schema)
+        client.create_table(table)
 
     job_config = bigquery.LoadJobConfig(
         schema=schema,
@@ -74,10 +90,18 @@ def main():
         print("Error: Missing required environment variables (GCP_PROJECT_ID, BQ_DATASET, BQ_TABLE).")
         return
 
-    # ETL Process
-    price_data = fetch_bitcoin_price()
-    df = create_dataframe(price_data)
-    load_to_bigquery(df, project_id, dataset_id, table_id)
+    # Loop for 2 iterations with a 1-minute delay
+    iterations :int = 2
+    for i in range(iterations):
+        print(f"--- ETL Cycle {i+1}/{iterations} ---")
+        # ETL Process
+        price_data = fetch_bitcoin_price()
+        df = create_dataframe(price_data)
+        load_to_bigquery(df, project_id, dataset_id, table_id)
+        
+        if i < 1: # Wait only after the first iteration
+            print("Waiting for 1 minute before next cycle...")
+            time.sleep(60)
     
     print("ETL job finished.")
 
