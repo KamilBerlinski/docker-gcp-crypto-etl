@@ -1,0 +1,6 @@
+requests
+google-cloud-bigquery
+pandas
+pyarrow
+db-dtypes
+pandas-gbq

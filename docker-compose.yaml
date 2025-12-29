@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  etl-job:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - /home/kamil/Documents/keys/gcp:/app/secrets:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-key.json
+      - GCP_PROJECT_ID=docker-lab-crypto
+      - BQ_DATASET=crypto_data
+      - BQ_TABLE=bitcoin_rates
+
+    working_dir: /app
+    command:  python main.py
