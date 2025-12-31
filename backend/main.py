@@ -6,15 +6,28 @@ from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
 
 def fetch_bitcoin_price():
-    """Fetches Bitcoin price from the CoinGecko API."""
+    """Fetches Bitcoin price with retry logic for rate limits."""
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur,gbp"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
     try:
-        response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,eur,gbp")
-        response.raise_for_status()  # Raise an exception for bad status codes
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 429:
+            print("⚠️ Rate Limit Hit (429). Cooling down for 60 seconds...")
+            time.sleep(60)
+            return fetch_bitcoin_price() 
+            
+        response.raise_for_status()
         data = response.json()
         return data['bitcoin']
+        
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching data from CoinGecko API: {e}")
+        print(f"Error fetching data: {e}")
         return None
+
 
 def create_dataframe(price_data):
     """Creates a Pandas DataFrame from the price data."""
@@ -24,6 +37,7 @@ def create_dataframe(price_data):
     df = pd.DataFrame([price_data])
     df['timestamp'] = pd.to_datetime('now', utc=True)
     return df
+
 
 def load_to_bigquery(df, project_id, dataset_id, table_id):
     """
@@ -90,8 +104,8 @@ def main():
         print("Error: Missing required environment variables (GCP_PROJECT_ID, BQ_DATASET, BQ_TABLE).")
         return
 
-    # Loop for 2 iterations with a 1-minute delay
-    iterations :int = 2
+    # Loop for iterations with a delay
+    iterations :int = 1
     for i in range(iterations):
         print(f"--- ETL Cycle {i+1}/{iterations} ---")
         # ETL Process
@@ -99,9 +113,9 @@ def main():
         df = create_dataframe(price_data)
         load_to_bigquery(df, project_id, dataset_id, table_id)
         
-        if i < 1: # Wait only after the first iteration
+        if i < iterations - 1:
             print("Waiting for 1 minute before next cycle...")
-            time.sleep(60)
+            time.sleep(80)
     
     print("ETL job finished.")
 
